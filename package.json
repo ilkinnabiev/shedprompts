@@ -2,12 +2,18 @@
   "name": "shedprompts",
   "version": "0.1.0",
   "description": "Schedule one-shot prompts for local coding agents.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ilkinnabiev/shedprompts.git"
+  },
+  "bugs": "https://github.com/ilkinnabiev/shedprompts/issues",
   "type": "module",
   "bin": {
     "shed": "dist/src/cli.js"
   },
   "files": [
     "dist/src",
+    "ui",
     "README.md",
     "SPEC.md"
   ],

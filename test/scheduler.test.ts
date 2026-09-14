@@ -29,6 +29,7 @@ const config = (...tasks: TaskConfig[]): ShedConfig => ({
   version: 1,
   path: "/project/shed.yml",
   directory: "/project",
+  revision: "test",
   tasks: Object.fromEntries(tasks.map((value) => [value.id, value])),
 });
 

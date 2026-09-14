@@ -1,5 +1,16 @@
-import { readFile, realpath, stat } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+  stat,
+} from "node:fs/promises";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { parseDocument } from "yaml";
 
@@ -19,6 +30,7 @@ export interface ShedConfig {
   version: 1;
   path: string;
   directory: string;
+  revision: string;
   tasks: Record<string, TaskConfig>;
 }
 
@@ -29,6 +41,22 @@ export class ConfigError extends Error {
   }
 }
 
+export class ConfigConflictError extends Error {
+  constructor(path: string, message: string) {
+    super(`${path}: ${message}`);
+    this.name = "ConfigConflictError";
+  }
+}
+
+export interface TaskDraft {
+  id: string;
+  at: string;
+  agent: AgentName;
+  cwd?: string;
+  prompt: string;
+  args?: string[];
+}
+
 const ROOT_KEYS = new Set(["version", "tasks"]);
 const TASK_KEYS = new Set(["at", "agent", "cwd", "prompt", "args"]);
 const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -36,6 +64,57 @@ const RFC3339 =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,3})?(Z|[+-](\d{2}):(\d{2}))$/;
 
 export async function loadConfig(inputPath: string): Promise<ShedConfig> {
+  return (await readConfig(inputPath)).config;
+}
+
+export async function addTask(
+  inputPath: string,
+  draft: TaskDraft,
+  expectedRevision: string,
+): Promise<ShedConfig> {
+  const path = (await readConfig(inputPath)).config.path;
+  const lock = await acquireConfigWriteLock(path);
+  try {
+    const { config, source } = await readConfig(path);
+    if (config.revision !== expectedRevision) {
+      throw new ConfigConflictError(
+        config.path,
+        "configuration changed; refresh and try again",
+      );
+    }
+    if (Object.hasOwn(config.tasks, draft.id)) {
+      throw new ConfigConflictError(
+        config.path,
+        `task ${JSON.stringify(draft.id)} already exists`,
+      );
+    }
+
+    const document = yamlDocument(config.path, source);
+    document.setIn(
+      ["tasks", draft.id],
+      {
+        at: draft.at,
+        agent: draft.agent,
+        ...(draft.cwd !== undefined ? { cwd: draft.cwd } : {}),
+        prompt: draft.prompt,
+        ...(draft.args !== undefined && draft.args.length > 0
+          ? { args: draft.args }
+          : {}),
+      },
+    );
+    const candidate = document.toString({ lineWidth: 0 });
+    const parsed = await parseConfig(config.path, candidate);
+
+    await replaceFile(config.path, candidate, expectedRevision);
+    return parsed;
+  } finally {
+    await lock.release();
+  }
+}
+
+async function readConfig(
+  inputPath: string,
+): Promise<{ config: ShedConfig; source: string }> {
   let path: string;
   try {
     path = await realpath(inputPath);
@@ -50,17 +129,11 @@ export async function loadConfig(inputPath: string): Promise<ShedConfig> {
     throw new ConfigError(path, `cannot read config file: ${messageOf(error)}`);
   }
 
-  const document = parseDocument(source, {
-    prettyErrors: false,
-    strict: true,
-    uniqueKeys: true,
-  });
-  if (document.errors.length > 0) {
-    throw new ConfigError(
-      path,
-      `invalid YAML: ${document.errors.map((error) => error.message).join("; ")}`,
-    );
-  }
+  return { config: await parseConfig(path, source), source };
+}
+
+async function parseConfig(path: string, source: string): Promise<ShedConfig> {
+  const document = yamlDocument(path, source);
 
   let value: unknown;
   try {
@@ -81,7 +154,7 @@ export async function loadConfig(inputPath: string): Promise<ShedConfig> {
 
   const rawTasks = mapping(root.get("tasks"), 'field "tasks"', path);
   const directory = dirname(path);
-  const tasks: Record<string, TaskConfig> = {};
+  const tasks: Record<string, TaskConfig> = Object.create(null);
 
   for (const [rawId, rawTask] of rawTasks) {
     if (typeof rawId !== "string" || !TASK_ID.test(rawId)) {
@@ -153,7 +226,29 @@ export async function loadConfig(inputPath: string): Promise<ShedConfig> {
     };
   }
 
-  return { version: 1, path, directory, tasks };
+  return {
+    version: 1,
+    path,
+    directory,
+    revision: revisionOf(source),
+    tasks,
+  };
+}
+
+function yamlDocument(path: string, source: string) {
+  const document = parseDocument(source, {
+    prettyErrors: false,
+    strict: true,
+    uniqueKeys: true,
+  });
+  const problems = [...document.errors, ...document.warnings];
+  if (problems.length > 0) {
+    throw new ConfigError(
+      path,
+      `invalid YAML: ${problems.map((error) => error.message).join("; ")}`,
+    );
+  }
+  return document;
 }
 
 function mapping(value: unknown, label: string, path: string): Map<unknown, unknown> {
@@ -231,6 +326,177 @@ function daysInMonth(year: number, month: number): number {
     return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
   }
   return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+function revisionOf(source: string): string {
+  return createHash("sha256").update(source).digest("hex");
+}
+
+async function replaceFile(
+  path: string,
+  source: string,
+  expectedRevision: string,
+): Promise<void> {
+  const directory = dirname(path);
+  const metadata = await stat(path);
+  if (!metadata.isFile() || metadata.nlink !== 1) {
+    throw new ConfigError(
+      path,
+      "UI updates require a regular config file with one hard link",
+    );
+  }
+  const temporary = join(
+    directory,
+    `.${basename(path)}-${randomUUID()}.tmp`,
+  );
+  const handle = await open(temporary, "wx", metadata.mode & 0o777);
+
+  try {
+    await handle.writeFile(source);
+    await handle.chmod(metadata.mode & 0o777);
+    await handle.sync();
+    await handle.close();
+    if (revisionOf(await readFile(path, "utf8")) !== expectedRevision) {
+      throw new ConfigConflictError(
+        path,
+        "configuration changed; refresh and try again",
+      );
+    }
+    await rename(temporary, path);
+    await syncDirectory(directory);
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await rm(temporary, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+interface ConfigWriteLock {
+  release(): Promise<void>;
+}
+
+async function acquireConfigWriteLock(path: string): Promise<ConfigWriteLock> {
+  const locksDirectory = join(
+    dirname(path),
+    `.${basename(path)}.shed-write-locks`,
+  );
+  await mkdir(locksDirectory, { recursive: true, mode: 0o700 });
+  const ownerPath = join(
+    locksDirectory,
+    `write-${process.pid}-${randomUUID()}.lock`,
+  );
+  const handle = await open(ownerPath, "wx", 0o600);
+
+  try {
+    await handle.writeFile(
+      `${JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })}\n`,
+    );
+    await handle.sync();
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await rm(ownerPath, { force: true }).catch(() => undefined);
+    throw error;
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+
+  try {
+    for (const filename of await readdir(locksDirectory)) {
+      const otherPath = join(locksDirectory, filename);
+      if (
+        otherPath === ownerPath ||
+        !filename.startsWith("write-") ||
+        !filename.endsWith(".lock")
+      ) {
+        continue;
+      }
+
+      const owner = await readConfigLockOwner(otherPath);
+      if (owner === null) {
+        continue;
+      }
+      if (
+        (owner.pid !== null && isProcessAlive(owner.pid)) ||
+        (owner.pid === null && owner.ageMs < 30_000)
+      ) {
+        throw new ConfigConflictError(
+          path,
+          "another configuration update is in progress",
+        );
+      }
+      await rm(otherPath, { force: true });
+    }
+  } catch (error) {
+    await releaseConfigWriteLock(ownerPath, locksDirectory);
+    throw error;
+  }
+
+  return {
+    release: () => releaseConfigWriteLock(ownerPath, locksDirectory),
+  };
+}
+
+async function releaseConfigWriteLock(
+  ownerPath: string,
+  locksDirectory: string,
+): Promise<void> {
+  await rm(ownerPath, { force: true });
+  await rmdir(locksDirectory).catch(() => undefined);
+}
+
+async function readConfigLockOwner(
+  path: string,
+): Promise<{ pid: number | null; ageMs: number } | null> {
+  try {
+    const [source, metadata] = await Promise.all([
+      readFile(path, "utf8"),
+      stat(path),
+    ]);
+    let pid: number | null = null;
+    try {
+      const value = JSON.parse(source) as { pid?: unknown };
+      if (Number.isInteger(value.pid) && Number(value.pid) > 0) {
+        pid = Number(value.pid);
+      }
+    } catch {
+      // A newly created lock may not have its owner metadata yet.
+    }
+    return { pid, ageMs: Math.max(0, Date.now() - metadata.mtimeMs) };
+  } catch (error) {
+    if (isNodeError(error, "ENOENT")) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return isNodeError(error, "EPERM");
+  }
+}
+
+async function syncDirectory(directory: string): Promise<void> {
+  if (process.platform === "win32") {
+    return;
+  }
+  const handle = await open(directory, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+function isNodeError(error: unknown, code: string): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as NodeJS.ErrnoException).code === code
+  );
 }
 
 function messageOf(error: unknown): string {

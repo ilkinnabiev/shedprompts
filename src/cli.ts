@@ -10,12 +10,14 @@ import {
   serve,
 } from "./scheduler.js";
 import { StateStore } from "./state.js";
+import { startUi } from "./ui.js";
 
 const usage = `Usage:
   shed [-c FILE] validate
   shed [-c FILE] status
   shed [-c FILE] run TASK_ID
-  shed [-c FILE] serve`;
+  shed [-c FILE] serve
+  shed [-c FILE] [--port PORT] ui`;
 
 async function main(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -25,6 +27,7 @@ async function main(argv: string[]): Promise<number> {
     options: {
       config: { type: "string", short: "c", default: "shed.yml" },
       help: { type: "boolean", short: "h", default: false },
+      port: { type: "string" },
     },
   });
 
@@ -37,6 +40,9 @@ async function main(argv: string[]): Promise<number> {
   const configPath = values.config;
   if (!command || !configPath) {
     throw new UsageError(usage);
+  }
+  if (command !== "ui" && values.port !== undefined) {
+    throw new UsageError("--port is only valid with ui");
   }
 
   switch (command) {
@@ -80,6 +86,18 @@ async function main(argv: string[]): Promise<number> {
       await serve(configPath);
       return 0;
 
+    case "ui": {
+      requireArguments(command, arguments_, 0);
+      const server = await startUi(configPath, {
+        port: parsePort(values.port),
+      });
+      console.log(`Shed UI: ${server.url}`);
+      console.log(`Config: ${configPath}`);
+      console.log("Run `shed serve` in another terminal to execute due tasks.");
+      await server.done;
+      return 0;
+    }
+
     default:
       throw new UsageError(`Unknown command ${JSON.stringify(command)}\n\n${usage}`);
   }
@@ -111,6 +129,14 @@ function requireArguments(
 }
 
 class UsageError extends Error {}
+
+function parsePort(value: string | undefined): number {
+  const port = Number(value ?? "4317");
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new UsageError("--port must be an integer from 1 to 65535");
+  }
+  return port;
+}
 
 main(process.argv.slice(2))
   .then((code) => {

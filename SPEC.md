@@ -4,7 +4,7 @@
 
 Shed is a small local scheduler for one-shot prompts executed by Codex,
 OpenCode, or pi. Version 1 intentionally does not provide recurring schedules,
-workflows, retries, notifications, a UI, or arbitrary commands.
+workflows, retries, notifications, remote access, or arbitrary commands.
 
 ## Configuration
 
@@ -58,6 +58,7 @@ shed [-c FILE] validate
 shed [-c FILE] status
 shed [-c FILE] run TASK_ID
 shed [-c FILE] serve
+shed [-c FILE] [--port PORT] ui
 ```
 
 - `validate` checks the complete configuration, every `cwd`, and availability
@@ -69,11 +70,45 @@ shed [-c FILE] serve
 - `serve` validates the configuration, recovers state, and waits for due
   events. It stays in the foreground; operating-system service managers are
   responsible for background execution and restart.
+- `ui` serves the local management interface on `127.0.0.1`. The default port
+  is `4317`; `--port` selects another port. It shows configured tasks and
+  runtime status and can append a new task to the YAML file. If the selected
+  file does not exist, `ui` creates `version: 1` with an empty task mapping
+  before starting. It does not run agents; `serve` remains the scheduler
+  process.
 
 Invalid input, an unavailable executable, failure to acquire the scheduler
 lock, or a failed `run` invocation must produce a non-zero exit status. A
 failed scheduled event is recorded as `failed`; `serve` stays alive and
 continues with later events.
+
+## Local UI
+
+The UI is a loopback-only convenience over the same configuration and state
+used by the CLI. YAML remains the source of truth. Each refresh reparses the
+current YAML and reopens the state file so manual edits and scheduler results
+appear without restarting the UI.
+
+Only `ui` bootstraps a missing configuration. It creates the selected path
+with mode `0600` on POSIX and the equivalent of `version: 1` plus
+`tasks: {}`. The parent directory must already exist. Other commands continue
+to reject a missing configuration.
+
+The UI may append a new task only. It cannot edit or delete tasks, invoke
+`run`, or start `serve`. It accepts only timestamps later than the request
+time, so adding a task through the UI cannot intentionally act as `run now`.
+A creation request includes the revision of the YAML that the user viewed.
+Shed serializes its configuration writers and rejects a stale revision after
+acquiring the write lock. Immediately before replacement it compares the
+on-disk revision again. A successful write uses a temporary file, durable
+flush, and atomic replacement while preserving YAML comments and file mode.
+UI updates require a regular configuration file with one hard link.
+
+Only agents whose executable is currently available on `PATH` may be selected
+for a new task. Every HTTP API request requires a random per-process
+capability included only in the fragment of the URL printed by `shed ui`.
+Requests must use the exact loopback `Host`, and mutations must also use the
+same `Origin`. Shed does not enable cross-origin access.
 
 ## Event identity and time
 
@@ -95,8 +130,8 @@ run automatically again.
 
 Shed invokes each agent through its supported non-interactive interface:
 Codex through `codex exec`, OpenCode through `opencode run`, and pi through
-`pi --print`. The prompt and configured arguments are passed as process
-arguments or standard input as appropriate for that interface.
+`pi --print`. Configured arguments are passed as process arguments and the
+prompt is passed on standard input.
 
 Processes are spawned directly with an argument vector. Shed never invokes a
 shell. Agent authentication and agent-specific configuration are inherited
@@ -130,7 +165,9 @@ must fail to acquire the configuration lock and exit without running events.
 - dependencies or workflows between tasks;
 - parallel scheduled execution;
 - automatic retries or backoff;
-- notifications or a graphical interface;
+- notifications;
+- remote or multi-user UI access;
+- editing, deleting, or immediately running tasks from the UI;
 - secrets in YAML;
 - arbitrary shell commands;
 - installation or supervision of a background service.

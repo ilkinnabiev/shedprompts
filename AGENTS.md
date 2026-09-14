@@ -25,6 +25,12 @@ explicit approval.
 - Inherit agent authentication; never store secrets in YAML.
 - Keep `serve` in the foreground and leave supervision to the operating
   system.
+- Bind the UI to loopback only. It may append tasks to YAML and read runtime
+  state, but it must never launch an agent.
+- Let `ui` create a missing config as `version: 1` with an empty task mapping;
+  other commands must continue to reject a missing config.
+- Require the per-process UI capability for every API request and reject
+  non-loopback hosts and cross-origin mutations.
 
 ## Engineering
 
@@ -33,5 +39,7 @@ explicit approval.
   needed for strict YAML parsing.
 - Keep the Codex, OpenCode, and pi adapters small and independent.
 - Add focused tests for every behavior change.
-- Do not introduce cron, workflows, plugins, a UI, custom commands, or service
+- Keep the v1 UI additive: no editing, deleting, run-now controls, remote
+  access, or user accounts.
+- Do not introduce cron, workflows, plugins, arbitrary commands, or service
   installation in v1.

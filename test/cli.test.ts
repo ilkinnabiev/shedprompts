@@ -87,5 +87,11 @@ tasks:
       { env },
     );
     assert.match(statusAfterRun.stdout, /review\t.*\tcodex\tpending/);
+
+    await assert.rejects(
+      execute(process.execPath, [cliPath, "-c", configPath, "run", "constructor"], { env }),
+      (error: unknown) => error instanceof Error &&
+        "stderr" in error && /Unknown task "constructor"/.test(String(error.stderr)),
+    );
   },
 );

@@ -121,6 +121,24 @@ test("rejects invalid root values", async (context) => {
   }
 });
 
+test("rejects unresolved YAML tags instead of silently accepting them", async (context) => {
+  const { path } = await fixture(context, "version: 1\ntasks: !unknown {}\n");
+  await assert.rejects(loadConfig(path), /invalid YAML.*Unresolved tag/i);
+});
+
+test("task lookup contains only configured IDs, including prototype names", async (context) => {
+  const { path } = await fixture(context, `version: 1
+tasks:
+  constructor:
+    at: 2099-01-01T00:00:00Z
+    agent: pi
+    prompt: Review this
+`);
+  const config = await loadConfig(path);
+  assert.equal(config.tasks["constructor"]?.id, "constructor");
+  assert.equal(config.tasks.toString, undefined);
+});
+
 test("rejects invalid task IDs, shapes, and fields", async (context) => {
   const cases = [
     [
