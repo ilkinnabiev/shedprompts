@@ -193,7 +193,7 @@ test("rejects invalid required task fields", async (context) => {
     ["excess precision", { ...valid, at: "2026-07-24T09:30:00.0001Z" }, /RFC 3339/i],
     ["invalid date", { ...valid, at: "2026-02-30T09:30:00Z" }, /not a valid/i],
     ["invalid offset", { ...valid, at: "2026-07-24T09:30:00+24:00" }, /not a valid/i],
-    ["bad agent", { ...valid, agent: "claude" }, /one of codex, opencode, pi/i],
+    ["bad agent", { ...valid, agent: "unknown" }, /one of codex, opencode, pi, claude/i],
     ["empty prompt", { ...valid, prompt: " \n" }, /prompt must not be empty/i],
     ["args type", { ...valid, args: "--yes" }, /args must be an array/i],
     ["args item", { ...valid, args: ["--yes", 1] }, /array of strings/i],

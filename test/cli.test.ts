@@ -22,76 +22,78 @@ const cliPath = join(
   "cli.js",
 );
 
-test(
-  "validates, reports, and manually runs a configured task end to end",
-  { skip: process.platform === "win32" },
-  async (context) => {
-    const directory = await mkdtemp(join(tmpdir(), "shed-cli-"));
-    context.after(() => rm(directory, { recursive: true, force: true }));
-    const binaryDirectory = join(directory, "bin");
-    const configPath = join(directory, "shed.yml");
-    const promptPath = join(directory, "prompt");
-    const codexPath = join(binaryDirectory, "codex");
-    await mkdir(binaryDirectory);
-    await writeFile(
-      codexPath,
-      `#!/bin/sh
-test "$1" = "exec"
-test "$2" = "-"
+for (const agent of ["codex", "claude"] as const) {
+  test(
+    `validates, reports, and manually runs ${agent} end to end`,
+    { skip: process.platform === "win32" },
+    async (context) => {
+      const directory = await mkdtemp(join(tmpdir(), "shed-cli-"));
+      context.after(() => rm(directory, { recursive: true, force: true }));
+      const binaryDirectory = join(directory, "bin");
+      const configPath = join(directory, "shed.yml");
+      const promptPath = join(directory, "prompt");
+      const agentPath = join(binaryDirectory, agent);
+      await mkdir(binaryDirectory);
+      await writeFile(
+        agentPath,
+        `#!/bin/sh
+test "$*" = "${agent === "codex" ? "exec -" : "--model sonnet --print"}" || exit 1
 cat > "$SHED_TEST_PROMPT"
 `,
-    );
-    await chmod(codexPath, 0o755);
-    await writeFile(
-      configPath,
-      `version: 1
+      );
+      await chmod(agentPath, 0o755);
+      await writeFile(
+        configPath,
+        `version: 1
 tasks:
   review:
     at: 2099-07-24T09:30:00Z
-    agent: codex
+    agent: ${agent}
+    args: ${agent === "claude" ? "[--model, sonnet]" : "[]"}
     prompt: Review this
 `,
-    );
+      );
 
-    const env = {
-      ...process.env,
-      PATH: `${binaryDirectory}${delimiter}${process.env.PATH ?? ""}`,
-      SHED_TEST_PROMPT: promptPath,
-      XDG_STATE_HOME: join(directory, "state"),
-    };
+      const env = {
+        ...process.env,
+        PATH: `${binaryDirectory}${delimiter}${process.env.PATH ?? ""}`,
+        SHED_TEST_PROMPT: promptPath,
+        XDG_STATE_HOME: join(directory, "state"),
+      };
 
-    const validated = await execute(
-      process.execPath,
-      [cliPath, "-c", configPath, "validate"],
-      { env },
-    );
-    assert.match(validated.stdout, /1 task\(s\) valid/);
+      const validated = await execute(
+        process.execPath,
+        [cliPath, "-c", configPath, "validate"],
+        { env },
+      );
+      assert.match(validated.stdout, /1 task\(s\) valid/);
 
-    const status = await execute(
-      process.execPath,
-      [cliPath, "-c", configPath, "status"],
-      { env },
-    );
-    assert.match(status.stdout, /review\t.*\tcodex\tpending/);
+      const status = await execute(
+        process.execPath,
+        [cliPath, "-c", configPath, "status"],
+        { env },
+      );
+      assert.ok(status.stdout.includes(`\t${agent}\tpending`));
 
-    await execute(
-      process.execPath,
-      [cliPath, "-c", configPath, "run", "review"],
-      { env },
-    );
-    assert.equal(await readFile(promptPath, "utf8"), "Review this");
+      await execute(
+        process.execPath,
+        [cliPath, "-c", configPath, "run", "review"],
+        { env },
+      );
+      assert.equal(await readFile(promptPath, "utf8"), "Review this");
 
-    const statusAfterRun = await execute(
-      process.execPath,
-      [cliPath, "-c", configPath, "status"],
-      { env },
-    );
-    assert.match(statusAfterRun.stdout, /review\t.*\tcodex\tpending/);
+      const statusAfterRun = await execute(
+        process.execPath,
+        [cliPath, "-c", configPath, "status"],
+        { env },
+      );
+      assert.ok(statusAfterRun.stdout.includes(`\t${agent}\tpending`));
 
-    await assert.rejects(
-      execute(process.execPath, [cliPath, "-c", configPath, "run", "constructor"], { env }),
-      (error: unknown) => error instanceof Error &&
-        "stderr" in error && /Unknown task "constructor"/.test(String(error.stderr)),
-    );
-  },
-);
+      await assert.rejects(
+        execute(process.execPath, [cliPath, "-c", configPath, "run", "constructor"], { env }),
+        (error: unknown) => error instanceof Error &&
+          "stderr" in error && /Unknown task "constructor"/.test(String(error.stderr)),
+      );
+    },
+  );
+}

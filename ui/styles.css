@@ -183,6 +183,8 @@ h1 {
 
 .agent-stickers {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px 0;
   min-height: 48px;
   align-items: center;
   justify-content: center;
@@ -213,6 +215,11 @@ h1 {
 .sticker-lime {
   transform: rotate(-6deg) translateX(-8px);
   background: #e0ee92;
+}
+
+.sticker-clay {
+  transform: rotate(3deg);
+  background: #e9baa6;
 }
 
 .totals {

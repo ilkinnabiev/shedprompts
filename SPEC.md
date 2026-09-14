@@ -3,8 +3,9 @@
 ## Purpose
 
 Shed is a small local scheduler for one-shot prompts executed by Codex,
-OpenCode, or pi. Version 1 intentionally does not provide recurring schedules,
-workflows, retries, notifications, remote access, or arbitrary commands.
+OpenCode, pi, or Claude Code. Version 1 intentionally does not provide
+recurring schedules, workflows, retries, notifications, remote access, or
+arbitrary commands.
 
 ## Configuration
 
@@ -38,7 +39,7 @@ configuration. A task definition is a mapping with these fields:
 - `at`: required; a valid RFC 3339 timestamp with an explicit UTC offset or
   `Z`. Fractional seconds may contain at most three digits. It represents one
   instant and one scheduled run.
-- `agent`: required; one of `codex`, `opencode`, or `pi`.
+- `agent`: required; one of `codex`, `opencode`, `pi`, or `claude`.
 - `prompt`: required; a non-empty string.
 - `cwd`: optional; a directory in which the agent runs. A relative path is
   resolved from the configuration file's directory. The default is that
@@ -129,8 +130,9 @@ run automatically again.
 ## Execution
 
 Shed invokes each agent through its supported non-interactive interface:
-Codex through `codex exec`, OpenCode through `opencode run`, and pi through
-`pi --print`. Configured arguments are passed as process arguments and the
+Codex through `codex exec`, OpenCode through `opencode run`, pi through
+`pi --print`, and Claude Code through `claude --print`.
+Configured arguments are passed as process arguments and the
 prompt is passed on standard input.
 
 Processes are spawned directly with an argument vector. Shed never invokes a

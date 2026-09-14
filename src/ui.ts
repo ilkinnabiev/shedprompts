@@ -22,7 +22,7 @@ import {
 import { StateStore, type StateOptions } from "./state.js";
 
 const HOST = "127.0.0.1";
-const AGENTS: AgentName[] = ["codex", "opencode", "pi"];
+const AGENTS: AgentName[] = ["codex", "opencode", "pi", "claude"];
 const MAX_BODY_BYTES = 64 * 1024;
 
 interface StaticAsset {
@@ -294,8 +294,11 @@ function parseCreateRequest(value: unknown): {
   if (typeof at !== "string") {
     throw new HttpError(400, "at must be a string");
   }
-  if (agent !== "codex" && agent !== "opencode" && agent !== "pi") {
-    throw new HttpError(400, "agent must be codex, opencode, or pi");
+  if (
+    agent !== "codex" && agent !== "opencode" &&
+    agent !== "pi" && agent !== "claude"
+  ) {
+    throw new HttpError(400, "agent must be codex, opencode, pi, or claude");
   }
   if (typeof prompt !== "string") {
     throw new HttpError(400, "prompt must be a string");

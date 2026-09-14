@@ -3,7 +3,7 @@
 ## Mission
 
 Build `shed`, a minimal local scheduler for one-shot prompts executed by
-Codex, OpenCode, and pi.
+Codex, OpenCode, pi, and Claude Code.
 
 ## Source of truth
 
@@ -37,7 +37,7 @@ explicit approval.
 - Use TypeScript on Node.js.
 - Prefer Node's standard library and keep runtime dependencies to the minimum
   needed for strict YAML parsing.
-- Keep the Codex, OpenCode, and pi adapters small and independent.
+- Keep the Codex, OpenCode, pi, and Claude Code adapters small and independent.
 - Add focused tests for every behavior change.
 - Keep the v1 UI additive: no editing, deleting, run-now controls, remote
   access, or user accounts.

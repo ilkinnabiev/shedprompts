@@ -1,8 +1,8 @@
 # Shed
 
-Shed schedules one-shot prompts for Codex, OpenCode, and pi from a strict YAML
-file. It runs locally, invokes agents without a shell, and keeps execution
-state outside the configuration.
+Shed schedules one-shot prompts for Codex, OpenCode, pi, and Claude Code from
+a strict YAML file. It runs locally, invokes agents without a shell, and
+keeps execution state outside the configuration.
 
 ## Install from source
 
@@ -43,8 +43,13 @@ tasks:
 
 Replace `at` with your intended run time and `cwd` with your project directory.
 `at` must be an RFC 3339 timestamp with a timezone. Relative `cwd` paths are
-resolved from the YAML file. Supported agents are `codex`, `opencode`, and
-`pi`.
+resolved from the YAML file. Supported agents are `codex`, `opencode`, `pi`,
+and `claude` (Claude Code).
+
+For Claude Code, set `agent: claude`. Shed invokes `claude --print` with the
+prompt on stdin and inherits the installed CLI's authentication and permission
+settings. Pass any additional CLI options through `args`; see the
+[Claude Code automation guide](https://code.claude.com/docs/en/headless).
 
 ## Usage
 

@@ -29,6 +29,56 @@ test("creates a minimal config when the UI starts without one", async (context) 
   assert.deepEqual(Object.keys((await loadConfig(path)).tasks), []);
 });
 
+test("offers Claude Code and only adds its tasks when the executable is available", async (context) => {
+  const directory = await mkdtemp(join(tmpdir(), "shed-ui-claude-"));
+  context.after(() => rm(directory, { recursive: true, force: true }));
+  const path = join(directory, "shed.yml");
+  let available = false;
+  const server = await startUi(path, {
+    port: 0,
+    token: "test-token",
+    state: { root: join(directory, "state") },
+    agentAvailable: async (agent) => agent === "claude" && available,
+  });
+  context.after(() => server.close());
+  assert.match(await (await fetch(server.origin)).text(), /<option value="claude">Claude Code<\/option>/);
+
+  const headers = { "X-Shed-Token": "test-token" };
+  const snapshot = async () => {
+    const response = await fetch(`${server.origin}/api/tasks`, { headers });
+    assert.equal(response.status, 200);
+    return await response.json() as {
+      config: { revision: string };
+      agents: Record<string, boolean>;
+      tasks: Array<{ agent: string; status: string }>;
+    };
+  };
+  const before = await snapshot();
+  assert.equal(before.agents.claude, false);
+  const create = () => fetch(`${server.origin}/api/tasks`, {
+    method: "POST",
+    headers: { ...headers, Origin: server.origin, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      revision: before.config.revision,
+      id: "claude-review",
+      at: "2099-01-01T00:00:00Z",
+      agent: "claude",
+      prompt: "Review this diff.",
+      args: ["--model", "sonnet"],
+    }),
+  });
+  assert.equal((await create()).status, 400);
+  assert.deepEqual(Object.keys((await loadConfig(path)).tasks), []);
+
+  available = true;
+  assert.equal((await snapshot()).agents.claude, true);
+  assert.equal((await create()).status, 201);
+  assert.equal((await loadConfig(path)).tasks["claude-review"]?.agent, "claude");
+  assert.deepEqual((await snapshot()).tasks.map(({ agent, status }) => ({ agent, status })), [
+    { agent: "claude", status: "pending" },
+  ]);
+});
+
 test("serves the local UI, creates a task, and reloads event state", async (context) => {
   const directory = await mkdtemp(join(tmpdir(), "shed-ui-"));
   context.after(() => rm(directory, { recursive: true, force: true }));

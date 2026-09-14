@@ -14,7 +14,7 @@ import { basename, dirname, join, resolve } from "node:path";
 
 import { parseDocument } from "yaml";
 
-export type AgentName = "codex" | "opencode" | "pi";
+export type AgentName = "codex" | "opencode" | "pi" | "claude";
 
 export interface TaskConfig {
   id: string;
@@ -171,10 +171,13 @@ async function parseConfig(path: string, source: string): Promise<ShedConfig> {
     const atText = requiredString(task, "at", label, path);
     const at = timestamp(atText, `${label}.at`, path);
     const agent = requiredString(task, "agent", label, path);
-    if (agent !== "codex" && agent !== "opencode" && agent !== "pi") {
+    if (
+      agent !== "codex" && agent !== "opencode" &&
+      agent !== "pi" && agent !== "claude"
+    ) {
       throw new ConfigError(
         path,
-        `${label}.agent must be one of codex, opencode, pi`,
+        `${label}.agent must be one of codex, opencode, pi, claude`,
       );
     }
 

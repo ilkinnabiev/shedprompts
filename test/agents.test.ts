@@ -33,6 +33,11 @@ test("builds the supported agent invocations without a shell", () => {
     args: ["--flag", "--print"],
     stdin: "review this",
   });
+  assert.deepEqual(buildAgentInvocation({ ...base, agent: "claude" }), {
+    command: "claude",
+    args: ["--flag", "--print"],
+    stdin: "review this",
+  });
 });
 
 test("finds executable files on PATH and rejects non-executable files", async () => {

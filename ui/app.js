@@ -192,10 +192,11 @@ function updateAgents(agents) {
   const options = [...agentInput.options];
   for (const option of options) {
     const available = agents[option.value] === true;
+    const label = option.value === "claude" ? "Claude Code" : option.value;
     option.disabled = !available;
     option.textContent = available
-      ? option.value
-      : `${option.value} / unavailable`;
+      ? label
+      : `${label} / unavailable`;
   }
 
   if (agentInput.selectedOptions[0]?.disabled) {

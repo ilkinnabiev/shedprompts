@@ -3,7 +3,7 @@ import { access, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { spawn } from "node:child_process";
 
-export type AgentName = "codex" | "opencode" | "pi";
+export type AgentName = "codex" | "opencode" | "pi" | "claude";
 
 export interface AgentTask {
   agent: AgentName;
@@ -49,6 +49,12 @@ export function buildAgentInvocation(task: AgentTask): AgentInvocation {
     case "pi":
       return {
         command: "pi",
+        args: [...extra, "--print"],
+        stdin: task.prompt,
+      };
+    case "claude":
+      return {
+        command: "claude",
         args: [...extra, "--print"],
         stdin: task.prompt,
       };
